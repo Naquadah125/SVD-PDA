@@ -1,5 +1,6 @@
 import os
-from dash import Dash, dcc, html, Input, Output, callback
+import base64
+from dash import Dash, dcc, html, Input, Output, State, callback
 import plotly.graph_objs as go
 from utils.svd import process_svd
 from utils.pca import process_pca
@@ -7,6 +8,9 @@ from utils.pca import process_pca
 app = Dash(__name__, title="PCA & SVD Face Analysis")
 
 app.layout = html.Div(style={'maxWidth': '1200px', 'margin': '0 auto', 'fontFamily': 'Arial'}, children=[
+    dcc.Store(id='result-store'),
+    dcc.Download(id='download-comp'),
+
     html.H1("Phân tích & Tái tạo Khuôn mặt (Window 10)", style={'textAlign': 'center', 'color': '#2c3e50'}),
     
     # Khu vực Upload chung
@@ -20,7 +24,14 @@ app.layout = html.Div(style={'maxWidth': '1200px', 'margin': '0 auto', 'fontFami
     # Slider chọn K chung
     html.Div([
         html.Label("Số lượng thành phần (k):", style={'fontWeight': 'bold'}),
-        dcc.Slider(id='k-slider', min=1, max=100, step=1, value=20, marks={1:'1', 50:'50', 100:'100'}, tooltip={"placement": "bottom", "always_visible": True})
+        # Thêm updatemode='mouseup' để chỉ chạy khi thả chuột
+        dcc.Slider(
+            id='k-slider', 
+            min=1, max=100, step=1, value=20, 
+            marks={1:'1', 50:'50', 100:'100'}, 
+            tooltip={"placement": "bottom", "always_visible": True},
+            updatemode='mouseup' 
+        )
     ], style={'padding': '20px'}),
 
     # Tabs chuyển đổi SVD và PCA
@@ -34,12 +45,12 @@ app.layout = html.Div(style={'maxWidth': '1200px', 'margin': '0 auto', 'fontFami
 ])
 
 @callback(
-    Output('tabs-content', 'children'),
+    [Output('tabs-content', 'children'), Output('result-store', 'data')],
     [Input('algo-tabs', 'value'), Input('upload-image', 'contents'), Input('k-slider', 'value')]
 )
 def render_content(tab, contents, k):
     if contents is None:
-        return html.Div("Vui lòng upload ảnh để bắt đầu.", style={'textAlign': 'center', 'marginTop': '20px'})
+        return html.Div("Vui lòng upload ảnh để bắt đầu.", style={'textAlign': 'center', 'marginTop': '20px'}), None
 
     # Chọn thuật toán dựa trên Tab
     if tab == 'tab-svd':
@@ -53,8 +64,6 @@ def render_content(tab, contents, k):
 
     # Vẽ biểu đồ
     fig = go.Figure()
-    # Nếu là PCA, cum_var có độ dài = k, nếu SVD thì độ dài = toàn bộ rank
-    # Cần xử lý để vẽ cho đúng
     x_axis = list(range(1, len(cum_var) + 1))
     fig.add_trace(go.Scatter(x=x_axis, y=cum_var*100, mode='lines+markers', line=dict(color=color)))
     fig.update_layout(title="Mức độ giữ lại thông tin (%)", height=300, margin=dict(l=20, r=20, t=40, b=20))
@@ -71,12 +80,31 @@ def render_content(tab, contents, k):
         # Hàng hiển thị thông số
         html.Div(style={'textAlign': 'center', 'marginTop': '20px', 'fontSize': '18px'}, children=[
             html.P(f"Thông tin giữ lại: {retention:.2f}%"),
-            html.P(f"Dung lượng nén ước tính: {size}")
+            html.P(f"Dung lượng nén ước tính: {size}"),
+            html.Button("⬇ Tải ảnh kết quả", id="btn-download", style={'marginTop': '10px', 'padding': '10px 20px', 'fontSize': '16px', 'backgroundColor': color, 'color': 'white', 'border': 'none', 'borderRadius': '5px', 'cursor': 'pointer'})
         ]),
 
         # Biểu đồ
         dcc.Graph(figure=fig)
-    ])
+    ]), processed_img
+
+@callback(
+    Output("download-comp", "data"),
+    Input("btn-download", "n_clicks"), # Chỉ trigger khi click
+    State("result-store", "data"),     # Dùng State để không trigger khi data đổi
+    prevent_initial_call=True
+)
+def download_image(n_clicks, image_data):
+    # Kiểm tra kỹ n_clicks để tránh auto-download
+    if not n_clicks or not image_data:
+        return None
+    
+    try:
+        content_string = image_data.split(',')[1]
+        decoded = base64.b64decode(content_string)
+        return dcc.send_bytes(decoded, "reconstructed_face.jpg")
+    except Exception:
+        return None
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -9,8 +9,7 @@ def process_pca(contents, k):
     img = decode_image(contents)
     if img is None: return None, 0, [], "0 KB"
 
-    # Scikit-learn PCA yêu cầu input (n_samples, n_features)
-    # Với 1 ảnh đơn, ta coi mỗi hàng là 1 mẫu (sample), mỗi cột là 1 đặc trưng.
+    # lấy dài và rộng
     h, w = img.shape
     
     # Đảm bảo k không vượt quá min(height, width)
